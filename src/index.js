@@ -10,12 +10,13 @@ const PNGS = { orange, blue, green, red };
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-function ogTags(origin, tag, color, cache = false) {
+// og:url must keep the query string: Facebook re-scrapes the og:url as the canonical page.
+function ogTags(origin, tag, color, cache = false, pageUrl = `${origin}/p/${tag}`) {
   const img = `${origin}/img/${encodeURIComponent(tag)}.png?c=${color}${cache ? "&cache=1" : ""}`;
   return `
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="OG Lab">
-<meta property="og:url" content="${esc(`${origin}/p/${tag}`)}">
+<meta property="og:url" content="${esc(pageUrl)}">
 <meta property="og:title" content="OG Lab: ${esc(tag)}">
 <meta property="og:description" content="Test card for ${esc(tag)} (color ${esc(color)})">
 <meta property="og:image" content="${esc(img)}">
@@ -83,7 +84,7 @@ const tagged = (c, route) => {
 // Static OG tags in the HTML.
 app.get("/p/:tag", (c) => {
   const tag = tagged(c, "page");
-  const head = ogTags(c.get("origin"), tag, c.get("color"), c.get("cache"));
+  const head = ogTags(c.get("origin"), tag, c.get("color"), c.get("cache"), c.req.url);
   return html(c, page({ title: `OG Lab: ${tag}`, head, body: `<h1>OG Lab: ${esc(tag)}</h1>` }));
 });
 
@@ -91,7 +92,7 @@ app.get("/p/:tag", (c) => {
 app.get("/cors/:tag", (c) => {
   const tag = tagged(c, "cors");
   c.header("access-control-allow-origin", "*");
-  const head = ogTags(c.get("origin"), tag, "blue", c.get("cache"));
+  const head = ogTags(c.get("origin"), tag, "blue", c.get("cache"), c.req.url);
   return html(c, page({ title: `OG Lab: ${tag}`, head, body: `<h1>OG Lab: ${esc(tag)}</h1>` }));
 });
 

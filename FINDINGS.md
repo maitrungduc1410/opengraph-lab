@@ -64,7 +64,7 @@ Thời điểm: 2026-09-23 ~22:30 (UTC+8).
 - `https://www.facebook.com/share/p/1N5kdr3kZ2/` → card nhỏ: tiêu đề/mô tả bài + thumbnail.
 - DevTools Network: **chính trình duyệt** gọi `GET https://www.facebook.com/share/p/...` (UA Chrome thường của mình), rồi tự tải thumbnail từ `scontent-*.xx.fbcdn.net`.
 - → Trong chat E2EE, preview được dựng **phía client**, không nhờ server (hợp lý: server không được biết link trong tin nhắn mã hoá).
-- Giả thuyết giải thích vì sao link ngoài không có card: client chỉ `fetch` được trang cùng origin (`facebook.com`); trang ngoài bị **CORS** chặn đọc HTML, nên chỉ còn hiện domain. **CẦN VERIFY**: thêm route trả `Access-Control-Allow-Origin: *` rồi dán lại, xem card có hiện không.
+- ~~Giả thuyết: link ngoài bị CORS chặn~~ → **SAI**. Đã thử `https://og.jamesisme.com/cors/msg-cors-1` (có `Access-Control-Allow-Origin: *`): bản nháp vẫn chỉ hiện domain + URL và Worker **không nhận request nào**. Tức là Messenger web trong chat E2EE **không hề thử tải link ngoài** lúc soạn nháp; chỉ dựng preview cho link `facebook.com` (nội bộ).
 - Nếu dán 2 link cùng lúc, Messenger chỉ làm preview cho link đầu tiên.
 - Card nhiều ảnh kiểu "+32" (thấy ở tin đã gửi trước đây) **không** hiện lúc soạn nháp; lúc nháp chỉ là card nhỏ. Chưa thử gửi thật.
 
@@ -127,6 +127,41 @@ So sánh thực tế (curl với UA `Twitterbot/1.0`):
 - **X**: Twitterbot có tải trang nhưng không tải ảnh, `caps` trả 202 rỗng. Nghi 2 khả năng: (1) domain `workers.dev` bị hạ uy tín, (2) `no-store`. Test tách biến: `?cache=1` trên `workers.dev` trước, rồi custom domain.
 - Request "lạ" từ IP/Chrome của máy mình (14:37, 14:41, 14:43 UTC) là lúc tự mở link bằng tay, không phải app.
 
+## Kết quả sau khi thêm custom domain `og.jamesisme.com` + `?cache=1` (2026-09-23 ~23:05 UTC+8)
+
+### LinkedIn — ĐÃ XÁC NHẬN: chặn domain `*.workers.dev`
+
+| URL | Post Inspector | Worker log |
+|---|---|---|
+| `https://og.jamesisme.com/p/li-cd-1` | ✅ Card đầy đủ (ảnh sọc cam, "OG Lab: li-cd-1", `og.jamesisme.com`). Warning: description nên ≥ 100 ký tự | `LinkedInBot/1.0 (compatible; Mozilla/5.0; Apache-HttpClient +http://www.linkedin.com)`, AS14413 **LinkedIn Corporation**, Portland (Mỹ), 1 lần tải trang (`range: bytes=0-3145727` → **giới hạn 3 MB**) + 1 lần tải ảnh |
+| `https://opengraph-lab...workers.dev/p/li-wd-cache-1?cache=1` | ❌ "Unable to connect to server. Bad DNS, bad gateway, or invalid server address." | **Không có request nào** |
+
+- Cùng một Worker, cùng code, cùng header cache → chỉ khác domain. **LinkedIn từ chối kết nối tới `workers.dev`** ngay từ phía họ (không gửi request).
+- Ảnh được LinkedIn tải về và host lại trên `media.licdn.com/dms/image/sync/v2/...articleshare-shrink_480...`.
+
+### X — không chặn `workers.dev`; card được tạo **bất đồng bộ**
+
+- `/p/x-wd-cache-1?cache=1` lần 1: Twitterbot (SeaTac) tải trang 2 lần + **tải ảnh 1 lần**; `caps.x.com/v2/cards/preview.json` trả **202** → composer không hiện card (vòng loading mãi).
+- Xoá rồi dán **lại đúng URL đó**: `caps` trả **200** → card hiện đầy đủ, có ảnh, "From opengraph-lab.maitrungduc1410.workers.dev".
+- `x-web-1` (link cũ, `no-store`) dán lại sau ~30 phút: card cũng hiện đủ ảnh, **không có request mới** tới Worker (X dùng card đã cache). Ảnh card nằm ở `https://pbs.twimg.com/card_img/<id>/...` → X tải ảnh về và host lại.
+- → Lý do ban đầu "X không ra card": **lần dán đầu tiên với URL mới, X web chỉ nhận 202 và không poll lại**. `jamesisme.com` ra card ngay vì X đã cache từ trước. Không phải do domain hay kích thước ảnh.
+- Chưa kết luận được `no-store` có làm Twitterbot bỏ qua ảnh hay không: log không thấy Twitterbot tải ảnh `x-web-1`, nhưng có một khoảng tail bị đứt (14:47–15:03 UTC, lúc deploy) nên có thể đã tải trong lúc đó.
+
+### Facebook — `no-store` làm ảnh bị tải lại hàng trăm lần; Facebook đi theo `og:url`
+
+Paste `/p/fb-cache-1?cache=1` vào post trang cá nhân:
+
+| Loại | Lượt tải |
+|---|---|
+| Trang `?cache=1` | 5 |
+| Trang **không** query (`/p/fb-cache-1`) | 5 |
+| Ảnh `?cache=1` (`max-age=600`) | **1** |
+| Ảnh không query (`no-store`) | **103** (trong đó **100** dồn vào phút 15:09, ~1 phút sau khi paste) |
+
+- Facebook tải cả `/p/fb-cache-1` **không có query**: vì `og:url` lúc đó trỏ về URL gốc không query → Facebook coi `og:url` là **URL chuẩn (canonical)** và scrape lại nó. Preview cuối cùng dùng ảnh + link của bản canonical (`/img/fb-cache-1.png?c=orange`, link `.../p/fb-cache-1?fbclid=...`).
+- → Rõ ràng: ảnh `max-age=600` chỉ bị tải **1 lần**; ảnh `no-store` bị tải **103 lần**. Proxy ảnh của Facebook (`external-*.fbcdn.net/emg1`) không được cache nên node nào cũng tự đi tải.
+- Code đã sửa: `og:url` giờ giữ nguyên query (`c.req.url`), để lần thử sau không bị Facebook nhảy sang canonical.
+
 ## Code mới (cần push + deploy)
 
 - `?cache=1` trên `/p/<tag>`: HTML + ảnh trả `cache-control: public, max-age=600` (giống `jamesisme.com`), URL ảnh trong `og:image` cũng mang `cache=1`.
@@ -138,20 +173,20 @@ So sánh thực tế (curl với UA `Twitterbot/1.0`):
 | App | Ai tải trang | Danh tính (UA) | Mạng | Ảnh đi đường nào | Ghi chú |
 |---|---|---|---|---|---|
 | Zalo web | Server | `facebookexternalhit/1.1 ... _zbot` (giả bot FB) | OVH Singapore | Proxy `photo-link-talk.zadn.vn`, tải bởi VNG TP.HCM (UA Chrome giả) | Có thể fetch theo từng ký tự |
-| Messenger E2EE (link ngoài) | Không ai | — | — | — | Chỉ hiện domain |
+| Messenger E2EE (link ngoài) | Không ai | — | — | — | Chỉ hiện domain; có CORS cũng không tải |
 | Messenger E2EE (link FB) | **Trình duyệt mình** | Chrome thường | Mạng mình | Tải thẳng `fbcdn` | Dựng preview phía client |
 | Facebook Create post / trang cá nhân | Server | `facebookexternalhit/1.1` (thật) | Meta, nhiều DC ở Mỹ | Proxy `external-*.fbcdn.net/emg1` | Range 512 KB; gõ thì fetch mọi tiền tố, paste thì 2 lần; ảnh bị tải dồn dập ~1 phút sau |
-| X web | Server | `Twitterbot/1.0` | Twitter Inc., SeaTac | Chưa tải ảnh | `caps` trả 202, không có card (với `workers.dev`) |
-| LinkedIn | Không ai | — | — | — | Post Inspector: "Unable to connect to server", nghi chặn `workers.dev` |
+| X web | Server | `Twitterbot/1.0` | Twitter Inc., SeaTac | Host lại trên `pbs.twimg.com/card_img` | Lần dán đầu `caps` trả 202 → không card; dán lại → 200 → có card |
+| LinkedIn | Server | `LinkedInBot/1.0 ... Apache-HttpClient` | LinkedIn Corp., Portland | Host lại trên `media.licdn.com` | **Chặn `*.workers.dev`**; domain riêng thì OK; range 3 MB |
 
 ## Việc cần làm tiếp
 
-1. Messenger: thêm route có header CORS, dán lại trong chat E2EE → xác nhận giả thuyết CORS.
+1. ~~Messenger: test CORS~~ → đã làm, giả thuyết sai (xem mục Messenger).
 2. Messenger: gửi thật 1 link ngoài + 1 link FB vào chat với chính mình, xem sau khi gửi thì ai tải (có bot Meta không, card nhiều ảnh hiện thế nào).
 3. Messenger: so với 1 chat **không** E2EE (URL `/messages/t/...`).
 4. Zalo: gõ chậm trong ô trống để xác nhận fetch theo ký tự; paste nguyên link để so sánh; gửi thật vào chat E2EE với người khác (nếu có người đồng ý).
 5. Facebook: paste (không gõ) để đếm lại số lần tải; thêm route HTML > 512 KB, đặt thẻ OG sau mốc 512 KB.
-6. X: thử `/p/<tag>?cache=1`; nếu vẫn không ra card thì thử custom domain.
-7. LinkedIn + X: gắn custom domain (vd `og.jamesisme.com`, DNS đã ở Cloudflare) vào Worker, dán lại cùng link.
-7b. Facebook: paste `/p/<tag>?cache=1`, xem đợt tải ảnh dồn dập sau 1 phút có còn không.
+6. ~~X: `?cache=1` / custom domain~~ → đã làm. Còn lại: đo lại xem `no-store` có làm Twitterbot bỏ qua ảnh không (tail chạy liên tục, URL mới, không deploy giữa chừng).
+7. ~~LinkedIn: custom domain~~ → đã xác nhận chặn `workers.dev`.
+7b. Facebook: sau khi deploy bản sửa `og:url`, paste lại `/p/<tag>?cache=1` (URL mới) để có số liệu sạch, không bị lẫn bản canonical.
 8. Thử route `/js/<tag>` (OG chèn bằng JS), `/r/<tag>` (redirect), `/slow/<tag>` trên từng app.

@@ -24,7 +24,8 @@ for (const block of raw.split(/\n(?=\{)/)) {
 rows.sort((a, b) => a.t.localeCompare(b.t));
 for (const r of rows) {
   const u = new URL(r.url);
-  const target = u.pathname + u.search;
+  const host = u.hostname.endsWith(".workers.dev") ? "wd" : u.hostname;
+  const target = `${host}${u.pathname}${u.search}`;
   if (filter && !target.includes(filter)) continue;
   console.log(
     [
