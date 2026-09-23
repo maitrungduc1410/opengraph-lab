@@ -1,0 +1,14 @@
+{
+  "name": "og-lab",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "gen-images": "node scripts/gen-images.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail og-lab --format json"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}
