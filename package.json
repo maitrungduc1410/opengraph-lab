@@ -3,13 +3,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "gen-images": "node scripts/gen-images.mjs",
+    "gen-images": "node scripts/gen-images.js",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "tail": "wrangler tail og-lab --format json",
+    "tail": "wrangler tail --format json",
+    "logs": "node scripts/summarize-tail.js",
     "login": "wrangler login"
   },
   "devDependencies": {
     "wrangler": "^4"
+  },
+  "dependencies": {
+    "hono": "^4.13.8"
   }
 }
