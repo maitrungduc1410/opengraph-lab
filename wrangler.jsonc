@@ -6,6 +6,12 @@
   "workers_dev": true,
   "rules": [{ "type": "Data", "globs": ["**/*.png"], "fallthrough": false }],
   "observability": {
-    "enabled": true
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true
+    },
+    "traces": {
+      "enabled": false
+    }
   }
 }
